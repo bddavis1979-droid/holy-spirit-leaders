@@ -1,5 +1,4 @@
 import streamlit as st
-import pandas as pd
 from datetime import datetime
 
 st.set_page_config(page_title="Holy Spirit Leaders Adventure", page_icon="⭐", layout="wide")
@@ -16,16 +15,20 @@ st.markdown("""
 st.title("⭐ Holy Spirit Leaders Adventure")
 st.caption("Olivia & Nora’s Leadership Journey • Holy Spirit Catholic School • Louisville, KY")
 
-# Characters
-characters = {
-    "Mary Kay Ash": "Faithful Entrepreneur",
-    "Madam C.J. Walker": "Rags-to-Riches Leader",
-    "Estée Lauder": "Sophisticated & Elegant",
-    "Debbie Fields": "Fun & Determined",
-    "Lillian Vernon": "Organized & Practical",
-    "Ruth Handler": "Creative Visionary"
+# ====================== CUSTOM CHARACTERS ======================
+# Olivia's character
+olivia_character = {
+    "name": "Olivia the Elegant Leader",
+    "description": "A classy, confident 5th grader who leads with kindness and courage."
 }
 
+# Nora's character
+nora_character = {
+    "name": "Nora the Graceful Achiever",
+    "description": "A bright, focused 4th grader who leads with determination and joy."
+}
+
+# ====================== LEADERSHIP & EATING ======================
 leadership_behaviors = [
     "Shows Initiative", "Leads by Example", "Takes Full Responsibility",
     "Makes Wise Choices", "Shows Courage", "Practices Self-Control",
@@ -38,50 +41,42 @@ eating_behaviors = [
     "Ate a balanced meal", "Limited candy/chips/sweets"
 ]
 
-# Session State
+# ====================== SESSION STATE ======================
 if 'data' not in st.session_state:
     st.session_state.data = {
-        'olivia': {'stars': 0, 'coins': 0, 'level': 1, 'character': None, 'grades': [], 'daily': []},
-        'nora': {'stars': 0, 'coins': 0, 'level': 1, 'character': None, 'grades': [], 'daily': []}
+        'olivia': {'stars': 0, 'coins': 50, 'level': 1, 'outfits': [], 'daily': []},
+        'nora': {'stars': 0, 'coins': 50, 'level': 1, 'outfits': [], 'daily': []}
     }
 
-# Sidebar
+# ====================== SIDEBAR ======================
 st.sidebar.header("⚙️ Settings")
 st.sidebar.write("**Incentive:** $100 every 30 days (first 90 days)")
 st.sidebar.write("**Grade Rule:** Minimum **90%** on all work")
 
-# Character Selection
-st.header("👑 Choose Your Leadership Role Model")
+# ====================== CHARACTER DISPLAY ======================
+st.header("👑 Your Leadership Characters")
 
 col1, col2 = st.columns(2)
 
 with col1:
     st.markdown('<div class="girl-card olivia">', unsafe_allow_html=True)
     st.subheader("Olivia (5th Grade)")
-    if st.session_state.data['olivia']['character'] is None:
-        choice = st.selectbox("Pick your character", list(characters.keys()), key="olivia_char")
-        if st.button("Confirm Character for Olivia"):
-            st.session_state.data['olivia']['character'] = choice
-            st.rerun()
-    else:
-        st.success(f"**{st.session_state.data['olivia']['character']}**")
+    st.write(f"**{olivia_character['name']}**")
+    st.write(olivia_character['description'])
+    st.write(f"**Current Outfits:** {', '.join(st.session_state.data['olivia']['outfits']) if st.session_state.data['olivia']['outfits'] else 'Basic Look'}")
     st.markdown('</div>', unsafe_allow_html=True)
 
 with col2:
     st.markdown('<div class="girl-card nora">', unsafe_allow_html=True)
     st.subheader("Nora (4th Grade)")
-    if st.session_state.data['nora']['character'] is None:
-        choice = st.selectbox("Pick your character", list(characters.keys()), key="nora_char")
-        if st.button("Confirm Character for Nora"):
-            st.session_state.data['nora']['character'] = choice
-            st.rerun()
-    else:
-        st.success(f"**{st.session_state.data['nora']['character']}**")
+    st.write(f"**{nora_character['name']}**")
+    st.write(nora_character['description'])
+    st.write(f"**Current Outfits:** {', '.join(st.session_state.data['nora']['outfits']) if st.session_state.data['nora']['outfits'] else 'Basic Look'}")
     st.markdown('</div>', unsafe_allow_html=True)
 
 st.divider()
 
-# Daily Check-in
+# ====================== DAILY CHECK-IN ======================
 st.header("📅 Daily Leadership Check-In")
 
 tab1, tab2 = st.tabs(["Olivia", "Nora"])
@@ -113,7 +108,7 @@ with tab2:
 
 st.divider()
 
-# Grades
+# ====================== GRADES ======================
 st.header("📚 Grades (Minimum 90%)")
 
 gcol1, gcol2 = st.columns(2)
@@ -140,12 +135,18 @@ add_grade("Nora", "nora")
 
 st.divider()
 
-# Coin Shop
-st.header("🛍️ Leadership Coin Shop")
+# ====================== CHARACTER SHOP ======================
+st.header("🛍️ Dress Your Character Shop")
 
 shop_items = {
-    "Lip Gloss": 25, "Hair Bow Set": 30, "Necklace": 45,
-    "Cute Dress": 80, "Makeup Palette": 65, "Perfume": 55, "Sparkly Shoes": 90
+    "Pink Lip Gloss": 25,
+    "Sparkly Hair Bow": 30,
+    "Pearl Necklace": 45,
+    "Pretty Pink Dress": 80,
+    "Makeup Palette": 65,
+    "Sweet Perfume": 55,
+    "Shiny Shoes": 90,
+    "Elegant Headband": 35
 }
 
 shop_col1, shop_col2 = st.columns(2)
@@ -155,33 +156,35 @@ for girl in ['olivia', 'nora']:
     with shop_col1 if girl == "olivia" else shop_col2:
         st.subheader(f"{name}'s Shop")
         st.write(f"**Coins:** {st.session_state.data[girl]['coins']}")
+        
         item = st.selectbox("Choose item", list(shop_items.keys()), key=f"shop_{girl}")
         if st.button(f"Buy {item}", key=f"buy_{girl}"):
             cost = shop_items[item]
             if st.session_state.data[girl]['coins'] >= cost:
                 st.session_state.data[girl]['coins'] -= cost
-                st.success(f"Purchased {item}!")
+                st.session_state.data[girl]['outfits'].append(item)
+                st.success(f"{item} added to {name}'s character!")
                 st.rerun()
             else:
                 st.error("Not enough coins!")
 
 st.divider()
 
-# Sunday Night Review
+# ====================== SUNDAY NIGHT REVIEW ======================
 st.header("🌟 Sunday Night Review")
 
-if st.button("Show Weekly Summary"):
+if st.button("Show This Week's Summary"):
     for girl in ['olivia', 'nora']:
         name = "Olivia" if girl == "olivia" else "Nora"
         st.subheader(name)
         st.write(f"**Total Stars:** {st.session_state.data[girl]['stars']}")
         st.write(f"**Total Coins:** {st.session_state.data[girl]['coins']}")
-        st.write(f"**Character:** {st.session_state.data[girl]['character'] or 'Not chosen'}")
-    st.success("Excellent work this week!")
+        st.write(f"**Current Look:** {', '.join(st.session_state.data[girl]['outfits']) if st.session_state.data[girl]['outfits'] else 'Basic Look'}")
+    st.success("Excellent work this week, leaders!")
 
 st.divider()
 
-# 30-Day Incentive
+# ====================== INCENTIVE ======================
 st.header("💰 30-Day Incentive Progress")
 
 col1, col2 = st.columns(2)
