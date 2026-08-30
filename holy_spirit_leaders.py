@@ -3,6 +3,7 @@ from datetime import datetime
 
 import pandas as pd
 import plotly.express as px
+import requests
 import streamlit as st
 
 st.set_page_config(page_title="Gridiron Command", page_icon="🏈", layout="wide", initial_sidebar_state="expanded")
@@ -55,6 +56,59 @@ def make_board():
         rows.append({"Rank": i, "Player": name, "Pos": pos, "Team": team, "Bye": 4 + i % 13, "Proj Pts": proj, "Floor": floor, "Ceiling": ceiling, "Trend": ["↑ 6", "—", "↓ 3", "↑ 2"][i % 4]})
     return pd.DataFrame(rows)
 
+
+def espn_request(league_id, season, swid="", espn_s2=""):
+    """Read the ESPN Fantasy API server-side so browser CORS is not an issue.
+
+    Public leagues work with league_id + season. Private leagues additionally
+    need the ESPN_S2 and SWID cookie values from the user's ESPN session.
+    """
+    url = f"https://fantasy.espn.com/apis/v3/games/ffl/seasons/{season}/segments/0/leagues/{league_id}"
+    views = ["mTeam", "mRoster", "mMatchupScore", "mSettings", "mStandings"]
+    headers = {"User-Agent": "GridironCommand/1.0", "Accept": "application/json"}
+    cookies = {}
+    if swid.strip(): cookies["SWID"] = swid.strip()
+    if espn_s2.strip(): cookies["espn_s2"] = espn_s2.strip()
+    response = requests.get(url, params=[("view", view) for view in views], headers=headers, cookies=cookies, timeout=15)
+    response.raise_for_status()
+    return response.json()
+
+
+def espn_team_table(payload):
+    teams = payload.get("teams", [])
+    rows = []
+    for team in teams:
+        record = team.get("record", {}).get("overall", {})
+        rows.append({
+            "Team": team.get("name") or team.get("location", "ESPN Team"),
+            "Owner": ", ".join(team.get("owners", [])) or "—",
+            "W": record.get("wins", 0),
+            "L": record.get("losses", 0),
+            "PF": round(team.get("points", 0), 1),
+            "PA": round(team.get("pointsAdjusted", team.get("points", 0)), 1),
+            "Team ID": team.get("id"),
+        })
+    return pd.DataFrame(rows)
+
+
+def espn_roster_table(payload):
+    rows = []
+    for team in payload.get("teams", []):
+        team_name = team.get("name") or team.get("location", "ESPN Team")
+        for entry in team.get("roster", {}).get("entries", []):
+            athlete = entry.get("playerPoolEntry", {}).get("player", {})
+            if athlete:
+                rows.append({
+                    "Fantasy Team": team_name,
+                    "Player": athlete.get("fullName", "Unknown"),
+                    "Position": athlete.get("defaultPositionId", "—"),
+                    "NFL Team": athlete.get("proTeamId", "—"),
+                    "Status": entry.get("lineupSlotId", "—"),
+                    "Week Points": athlete.get("stats", [{}])[-1].get("appliedTotal", 0) if athlete.get("stats") else 0,
+                })
+    return pd.DataFrame(rows)
+
+
 if 'board' not in st.session_state: st.session_state.board = make_board()
 if 'watchlist' not in st.session_state: st.session_state.watchlist = ["Bijan Robinson", "Brock Bowers", "Jayden Daniels"]
 if 'my_team' not in st.session_state: st.session_state.my_team = {"QB": "Jayden Daniels", "RB1": "Bijan Robinson", "RB2": "Jahmyr Gibbs", "WR1": "Ja'Marr Chase", "WR2": "Puka Nacua", "FLEX": "Brock Bowers", "K": "Kicker Stream", "DST": "DST Stream"}
@@ -74,7 +128,7 @@ def player_card(name, note=""):
 # ----------------------------- Sidebar -----------------------------
 st.sidebar.markdown("# 🏈 GRIDIRON\n## COMMAND")
 st.sidebar.caption("Your live fantasy football war room")
-view = st.sidebar.radio("COMMAND CENTER", ["War Room", "Top 500 Board", "Lineup Lab", "Streamers", "League Settings"], label_visibility="collapsed")
+view = st.sidebar.radio("COMMAND CENTER", ["War Room", "Top 500 Board", "Lineup Lab", "Streamers", "ESPN Sync", "League Settings"], label_visibility="collapsed")
 st.sidebar.divider()
 st.sidebar.markdown("**MY TEAM**")
 for slot, name in st.session_state.my_team.items():
@@ -192,6 +246,62 @@ elif view == "Streamers":
         st.dataframe(pd.DataFrame([["DST Stream", "DST", "—", "10.8", "Pressure matchup · turnover upside", "Low"], ["Pittsburgh Steelers", "DST", "PIT", "9.7", "Elite pass rush at home", "Medium"], ["Arizona Cardinals", "DST", "ARI", "8.8", "Opponent backup QB", "Medium"]], columns=["Team", "Pos", "Team", "Proj", "Signal", "Risk"]), hide_index=True, use_container_width=True)
     st.markdown("### Streaming checklist")
     st.write("✅ Vegas implied total  |  ✅ Home-field edge  |  ✅ Red-zone opportunity  |  ✅ Weather  |  ✅ Opposing offensive line")
+
+# ----------------------------- ESPN Sync -----------------------------
+elif view == "ESPN Sync":
+    st.markdown("<div class='eyebrow'>Live league connection</div><h1>ESPN SYNC</h1>", unsafe_allow_html=True)
+    st.caption("Pull your league, standings, rosters, and matchup totals into the war room. Public leagues only need a league ID; private leagues also need your ESPN session cookies.")
+    st.info("ESPN does not provide a stable public fantasy sync SDK. This connector uses ESPN's live Fantasy API from the server, which avoids browser CORS and keeps your cookies out of the page.")
+    left, right = st.columns([1, 1])
+    with left:
+        league_id = st.text_input("ESPN league ID", value=st.session_state.get("espn_league_id", ""), placeholder="Example: 123456")
+        season = st.number_input("Season", min_value=2020, max_value=2035, value=datetime.now().year, step=1)
+        st.markdown("**Private league credentials (optional)**")
+        st.caption("In ESPN, open fantasy.espn.com, then copy the SWID and espn_s2 cookie values from your browser's storage. They are only held in this session and are never written to disk.")
+        swid = st.text_input("SWID", type="password", placeholder="{xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}")
+        espn_s2 = st.text_input("espn_s2", type="password", placeholder="Long ESPN session value")
+        sync = st.button("Sync ESPN now", type="primary", use_container_width=True)
+    with right:
+        st.markdown("### Connection checklist")
+        st.markdown("✅ League ID and season\n\n✅ Public league, or both private cookies\n\n✅ Run sync before lineup lock\n\n✅ Confirm final injury news in ESPN")
+        if st.session_state.get("espn_last_sync"):
+            st.success(f"Last successful sync: {st.session_state.espn_last_sync}")
+        else:
+            st.warning("Not connected yet")
+    if sync:
+        if not str(league_id).strip():
+            st.error("Enter your ESPN league ID first.")
+        else:
+            with st.spinner("Connecting to ESPN live data…"):
+                try:
+                    payload = espn_request(league_id, int(season), swid, espn_s2)
+                    st.session_state.espn_payload = payload
+                    st.session_state.espn_league_id = str(league_id).strip()
+                    st.session_state.espn_last_sync = datetime.now().strftime("%b %d, %Y at %I:%M:%S %p")
+                    st.success("ESPN connected — league data is ready in this war room.")
+                except requests.HTTPError as error:
+                    code = error.response.status_code if error.response is not None else "unknown"
+                    if code in (401, 403): st.error("ESPN rejected the request. For a private league, add fresh SWID and espn_s2 cookies.")
+                    elif code == 404: st.error("League not found for that season. Check the league ID and season.")
+                    else: st.error(f"ESPN returned HTTP {code}. Try again closer to game time.")
+                except requests.RequestException as error:
+                    st.error(f"ESPN could not be reached: {error}")
+    if st.session_state.get("espn_payload"):
+        payload = st.session_state.espn_payload
+        st.divider()
+        st.markdown("### Synced league snapshot")
+        teams = espn_team_table(payload)
+        roster = espn_roster_table(payload)
+        a, b, c = st.columns(3)
+        a.markdown(metric("League teams", len(teams), "ESPN roster data"), unsafe_allow_html=True)
+        b.markdown(metric("Players synced", len(roster), "Across all rosters"), unsafe_allow_html=True)
+        c.markdown(metric("Live matchup data", "ON", "Refresh before lock"), unsafe_allow_html=True)
+        if not teams.empty:
+            st.markdown("### Standings & scoring")
+            st.dataframe(teams.sort_values(["W", "PF"], ascending=[False, False]), hide_index=True, use_container_width=True)
+        if not roster.empty:
+            with st.expander(f"View synced rosters ({len(roster)} players)"):
+                st.dataframe(roster, hide_index=True, use_container_width=True)
 
 # ----------------------------- League Settings -----------------------------
 else:
